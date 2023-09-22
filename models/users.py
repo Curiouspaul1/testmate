@@ -1,27 +1,57 @@
 from main import db
 from models.base import IdMixin
+from utils import gen_token
 
 
 class Permissions:
-    ADD_COURSE = 2
-    EDIT_COURSE = 4
-    DELETE_COURSE = 8
-    TAKE_COURSE = 16
-    TAKE_ASSESSMENT = 32
-    ADMIN = 64
+    ADD_SCHOOL = 2
+    EDIT_SCHOOL = 4
+    REMOVE_SCHOOL = 8
+    ADD_TEACHER = 16
+    REMOVE_TEACHER = 32
+    VIEW_SCHOOL = 64
+    AMDIN = 8192
+
+
+class SchoolPermissions:
+    # tutor perms
+    ADD_COURSE = 128
+    DELETE_COURSE = 256
+    EDIT_COURSE = 512
+    
+    # student perms
+    TAKE_COURSE = 1024
+    TAKE_TEST = 2048
+    SEE_RESULTS = 4096
+
 
 
 class User(db.Model, IdMixin):
     first_name = db.Column(db.String(20))
     last_name = db.Column(db.String(20))
-    email = db.Column(db.String(50))
+    email = db.Column(db.String(50), nullable=False, unique=True)
     password = db.Column(db.String(300))
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
+    school = db.relationship('School', backref='owner', uselist=False)
+
+    @classmethod
+    def get_by_email(cls, email):
+        return cls.query.filter_by(email=email).first()
+
 
 
 class Student(db.Model, IdMixin):
-    student_id = db.Column(db.String, nullable=False, unique=True)
-    gpa = db.Column(db.Integer, nullable=False)
+    student_id = db.Column(
+        db.String(8),
+        nullable=False,
+        unique=True,
+        default=gen_token(8),
+        index=True
+    )
+    first_name = db.Column(db.String(20))
+    last_name = db.Column(db.String(20))
+    class_name = db.Column(db.String(20))
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'))
 
     def update_gpa(self):
         pass
@@ -29,11 +59,24 @@ class Student(db.Model, IdMixin):
     def fetch_results(self):
         pass
 
+    @classmethod
+    def get_by_school_and_id(cls, student_id):
+        pass
+
+
 
 class Teacher(db.Model, IdMixin):
-    teacher_id = db.Column(db.String, nullable=False, unique=True)
+    teacher_id = db.Column(
+        db.String(10),
+        nullable=False,
+        unique=True,
+        default=gen_token(10),
+        index=True
+    )
+    first_name = db.Column(db.String(20))
+    last_name = db.Column(db.String(20))
     courses = db.relationship('Course', backref='teacher')
-
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'))
 
 
 class Role(db.Model, IdMixin):
@@ -58,16 +101,28 @@ class Role(db.Model, IdMixin):
         Generate default roles and persists them to db
         """
         roles = {
-            'admin': [Permissions.ADMIN],
-            'teacher': [
-                Permissions.ADD_COURSE,
-                Permissions.EDIT_COURSE,
-                Permissions.TAKE_COURSE,
-                Permissions.TAKE_ASSESSMENT,
-                Permissions.DELETE_COURSE
+            'admin': [
+                Permissions.ADMIN,
+                Permissions.ADD_SCHOOL,
+                Permissions.ADD_TEACHER,
+                Permissions.ADD_SCHOOL,
+                Permissions.EDIT_SCHOOL,
+                Permissions.REMOVE_SCHOOL,
+                Permissions.REMOVE_TEACHER
             ],
-            'students': [Permissions.TAKE_COURSE,
-                Permissions.TAKE_ASSESSMENT],
+            'teacher': [
+                SchoolPermissions.ADD_COURSE,
+                SchoolPermissions.EDIT_COURSE,
+                SchoolPermissions.TAKE_COURSE,
+                SchoolPermissions.TAKE_TEST,
+                SchoolPermissions.DELETE_COURSE,
+                SchoolPermissions.SEE_RESULTS
+            ],
+            'students': [
+                SchoolPermissions.TAKE_COURSE,
+                SchoolPermissions.TAKE_TEST,
+                SchoolPermissions.SEE_RESULTS
+            ],
             'generic': []
         }
 
@@ -90,3 +145,8 @@ class Role(db.Model, IdMixin):
             db.session.rollback()
         finally:
             db.session.close()
+
+
+    @classmethod
+    def get_role_by_name(cls, name):
+        return cls.query.filter_by(name=name).first()
